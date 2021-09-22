@@ -23,8 +23,21 @@ type File struct {
 	size uint64
 }
 
+type WorkerPool interface {
+	Run()
+	AddTask(task func())
+}
+
+type workerPool struct {
+	workerAmount int
+	queuedTasks  chan func()
+}
+
 var baseDir = Folder{}
 
+func (wp *workerPool) Run() {
+
+}
 func main() {
 	var wg sync.WaitGroup
 
