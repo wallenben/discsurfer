@@ -2,7 +2,8 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -41,7 +42,7 @@ func walk(dir string, folder *Folder, wg *sync.WaitGroup) {
 	folder.folders = []*Folder{}
 	folder.files = []*File{}
 
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 
 	if err != nil {
 		return
@@ -57,11 +58,12 @@ func walk(dir string, folder *Folder, wg *sync.WaitGroup) {
 			folderCount++
 
 			wg.Add(1)
-			go walk(dir+"/"+f.Name(), &nextFolder, wg)
+			go walk(filepath.Join(dir, f.Name()), &nextFolder, wg)
 		} else {
-			file := File{f.Name(), uint64(f.Size())}
+			info, _ := f.Info()
+			file := File{f.Name(), uint64(info.Size())}
 			folder.files = append(folder.files, &file)
-			size += uint64(f.Size())
+			size += uint64(info.Size())
 			fileCount++
 		}
 	}
