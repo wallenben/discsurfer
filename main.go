@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/alitto/pond"
 )
 
 type Folder struct {
@@ -23,33 +25,23 @@ type File struct {
 	size uint64
 }
 
-type WorkerPool interface {
-	Run()
-	AddTask(task func())
-}
-
-type workerPool struct {
-	workerAmount int
-	queuedTasks  chan func()
-}
-
-var baseDir = Folder{}
-
-func (wp *workerPool) Run() {
-
-}
 func main() {
 	var wg sync.WaitGroup
+	pool := pond.New(5000, 1000000)
+	baseDir := Folder{name: "/"}
 
 	wg.Add(1)
-	go walk(".", &baseDir, &wg)
+	pool.Submit(func() {
+		walk(".", &baseDir, &wg, pool)
+	})
 
 	wg.Wait()
+	pool.Stop()
 
 	fmt.Println("STATS", "Size:", baseDir.size, "Files:", baseDir.fileCount, "Folders:", baseDir.folderCount)
 }
 
-func walk(dir string, folder *Folder, wg *sync.WaitGroup) {
+func walk(dir string, folder *Folder, wg *sync.WaitGroup, pool *pond.WorkerPool) {
 	defer wg.Done()
 	folder.name = dir
 	folder.folders = []*Folder{}
@@ -65,13 +57,15 @@ func walk(dir string, folder *Folder, wg *sync.WaitGroup) {
 
 	for _, f := range files {
 		if f.IsDir() {
-			nextFolder := Folder{}
+			nextFolder := Folder{name: f.Name()}
 			nextFolder.parent = folder
 			folder.folders = append(folder.folders, &nextFolder)
 			folderCount++
 
 			wg.Add(1)
-			go walk(filepath.Join(dir, f.Name()), &nextFolder, wg)
+			pool.Submit(func() {
+				walk(filepath.Join(dir, nextFolder.name), &nextFolder, wg, pool)
+			})
 		} else {
 			info, _ := f.Info()
 			file := File{f.Name(), uint64(info.Size())}
