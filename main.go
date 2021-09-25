@@ -56,8 +56,7 @@ func walk(dir string, folder *Folder, wg *sync.WaitGroup, pool *pond.WorkerPool)
 
 	for _, f := range files {
 		if f.IsDir() {
-			nextFolder := Folder{name: f.Name()}
-			nextFolder.parent = folder
+			nextFolder := Folder{name: f.Name(), parent: folder}
 			folder.folders = append(folder.folders, &nextFolder)
 			folderCount++
 
