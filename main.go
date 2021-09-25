@@ -43,7 +43,6 @@ func main() {
 
 func walk(dir string, folder *Folder, wg *sync.WaitGroup, pool *pond.WorkerPool) {
 	defer wg.Done()
-	folder.name = dir
 	folder.folders = []*Folder{}
 	folder.files = []*File{}
 
