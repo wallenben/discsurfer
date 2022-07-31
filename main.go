@@ -4,10 +4,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sort"
 	"sync"
 
 	"github.com/alitto/pond"
 )
+
+type Stats struct {
+	files []*File
+	mutex sync.Mutex
+}
 
 type Folder struct {
 	name        string
@@ -21,27 +28,39 @@ type Folder struct {
 }
 
 type File struct {
-	name string
-	size uint64
+	parent *Folder
+	name   string
+	size   uint64
 }
 
 func main() {
 	var wg sync.WaitGroup
-	pool := pond.New(5000, 1000000)
+	pool := pond.New(runtime.NumCPU()*10, 1000000)
 	baseDir := Folder{name: "/"}
+	stats := Stats{files: []*File{}}
 
 	wg.Add(1)
 	pool.Submit(func() {
-		walk(".", &baseDir, &wg, pool)
+		walk("/", &baseDir, &stats, &wg, pool)
 	})
 
 	wg.Wait()
 	pool.Stop()
 
 	fmt.Println("STATS", "Size:", baseDir.size, "Files:", baseDir.fileCount, "Folders:", baseDir.folderCount)
+
+	sort.Slice(stats.files, func(i, j int) bool {
+		return stats.files[i].size > stats.files[j].size
+	})
+
+	fmt.Println("TOP 10 LARGEST FILES")
+	for i := 0; i < 10; i++ {
+		file := stats.files[i]
+		fmt.Println(file.parent.name+"/"+file.name, file.size)
+	}
 }
 
-func walk(dir string, folder *Folder, wg *sync.WaitGroup, pool *pond.WorkerPool) {
+func walk(dir string, folder *Folder, stats *Stats, wg *sync.WaitGroup, pool *pond.WorkerPool) {
 	defer wg.Done()
 	folder.folders = []*Folder{}
 	folder.files = []*File{}
@@ -62,12 +81,15 @@ func walk(dir string, folder *Folder, wg *sync.WaitGroup, pool *pond.WorkerPool)
 
 			wg.Add(1)
 			pool.Submit(func() {
-				walk(filepath.Join(dir, nextFolder.name), &nextFolder, wg, pool)
+				walk(filepath.Join(dir, nextFolder.name), &nextFolder, stats, wg, pool)
 			})
 		} else {
 			info, _ := f.Info()
-			file := File{f.Name(), uint64(info.Size())}
+			file := File{folder, f.Name(), uint64(info.Size())}
 			folder.files = append(folder.files, &file)
+			stats.mutex.Lock()
+			stats.files = append(stats.files, &file)
+			stats.mutex.Unlock()
 			size += uint64(info.Size())
 			fileCount++
 		}
