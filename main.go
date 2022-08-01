@@ -36,7 +36,7 @@ type File struct {
 func main() {
 	var wg sync.WaitGroup
 	pool := pond.New(runtime.NumCPU()*10, 1000000)
-	baseDir := Folder{name: "/"}
+	baseDir := Folder{name: ""}
 	stats := Stats{files: []*File{}}
 
 	wg.Add(1)
@@ -56,7 +56,13 @@ func main() {
 	fmt.Println("TOP 10 LARGEST FILES")
 	for i := 0; i < 10; i++ {
 		file := stats.files[i]
-		fmt.Println(file.parent.name+"/"+file.name, file.size)
+		parent := file.parent
+		path := ""
+		for parent != nil {
+			path = parent.name+"/" + path;
+			parent = parent.parent
+		}
+		fmt.Println(path + file.name, file.size)
 	}
 }
 
@@ -74,6 +80,11 @@ func walk(dir string, folder *Folder, stats *Stats, wg *sync.WaitGroup, pool *po
 	folderCount, fileCount, size := uint32(0), uint32(0), uint64(0)
 
 	for _, f := range files {
+		if (f.Name() == "Data" && folder.name == "Volumes" && folder.parent.name == "System" && folder.parent.parent.parent == nil) {
+			// Skipping bullshit apple folder
+			continue;
+		}
+
 		if f.IsDir() {
 			nextFolder := Folder{name: f.Name(), parent: folder}
 			folder.folders = append(folder.folders, &nextFolder)
@@ -87,13 +98,14 @@ func walk(dir string, folder *Folder, stats *Stats, wg *sync.WaitGroup, pool *po
 			info, _ := f.Info()
 			file := File{folder, f.Name(), uint64(info.Size())}
 			folder.files = append(folder.files, &file)
-			stats.mutex.Lock()
-			stats.files = append(stats.files, &file)
-			stats.mutex.Unlock()
 			size += uint64(info.Size())
 			fileCount++
 		}
 	}
+
+	stats.mutex.Lock()
+	stats.files = append(stats.files, folder.files...)
+	stats.mutex.Unlock()
 
 	folder.mutex.Lock()
 	folder.folderCount += folderCount
