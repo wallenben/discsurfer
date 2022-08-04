@@ -1,0 +1,11 @@
+{
+  "name": "Discsurfer",
+  "outputfilename": "discsurfer-wails",
+  "frontend:install": "pnpm install",
+  "frontend:build": "pnpm build",
+  "frontend:dev:watcher": "pnpm dev",
+  "author": {
+    "name": "wallenben",
+    "email": "benpwallen@gmail.com"
+  }
+}
