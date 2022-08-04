@@ -4,8 +4,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sort"
 	"sync"
+
+	"github.com/alitto/pond"
 )
+
+type Stats struct {
+	files []*File
+	mutex sync.Mutex
+}
 
 type Folder struct {
 	name        string
@@ -19,48 +28,46 @@ type Folder struct {
 }
 
 type File struct {
-	name string
-	size uint64
+	parent *Folder
+	name   string
+	size   uint64
 }
 
-type WorkerPool interface {
-	Run()
-	AddTask(task func())
-}
-
-type workerPool struct {
-	workerAmount int
-	queuedTasks  chan func()
-}
-
-var baseDir = Folder{}
-
-func (wp *workerPool) Run() {
-	for i := 0; i < wp.workerAmount; i++ {
-		go func(workerID int) {
-			for task := range wp.queuedTasks {
-				task()
-			}
-		}(i + 1)
-	}
-}
-func (wp *workerPool) AddTask(task func()) {
-	wp.queuedTasks <- task
-}
 func main() {
 	var wg sync.WaitGroup
+	pool := pond.New(runtime.NumCPU()*10, 1000000)
+	baseDir := Folder{name: ""}
+	stats := Stats{files: []*File{}}
 
 	wg.Add(1)
-	go walk(".", &baseDir, &wg)
+	pool.Submit(func() {
+		walk("/", &baseDir, &stats, &wg, pool)
+	})
 
 	wg.Wait()
+	pool.Stop()
 
 	fmt.Println("STATS", "Size:", baseDir.size, "Files:", baseDir.fileCount, "Folders:", baseDir.folderCount)
+
+	sort.Slice(stats.files, func(i, j int) bool {
+		return stats.files[i].size > stats.files[j].size
+	})
+
+	fmt.Println("TOP 10 LARGEST FILES")
+	for i := 0; i < 10; i++ {
+		file := stats.files[i]
+		parent := file.parent
+		path := ""
+		for parent != nil {
+			path = parent.name+"/" + path;
+			parent = parent.parent
+		}
+		fmt.Println(path + file.name, file.size)
+	}
 }
 
-func walk(dir string, folder *Folder, wg *sync.WaitGroup) {
+func walk(dir string, folder *Folder, stats *Stats, wg *sync.WaitGroup, pool *pond.WorkerPool) {
 	defer wg.Done()
-	folder.name = dir
 	folder.folders = []*Folder{}
 	folder.files = []*File{}
 
@@ -73,22 +80,32 @@ func walk(dir string, folder *Folder, wg *sync.WaitGroup) {
 	folderCount, fileCount, size := uint32(0), uint32(0), uint64(0)
 
 	for _, f := range files {
+		if (f.Name() == "Data" && folder.name == "Volumes" && folder.parent.name == "System" && folder.parent.parent.parent == nil) {
+			// Skipping bullshit apple folder
+			continue;
+		}
+
 		if f.IsDir() {
-			nextFolder := Folder{}
-			nextFolder.parent = folder
+			nextFolder := Folder{name: f.Name(), parent: folder}
 			folder.folders = append(folder.folders, &nextFolder)
 			folderCount++
 
 			wg.Add(1)
-			go walk(filepath.Join(dir, f.Name()), &nextFolder, wg)
+			pool.Submit(func() {
+				walk(filepath.Join(dir, nextFolder.name), &nextFolder, stats, wg, pool)
+			})
 		} else {
 			info, _ := f.Info()
-			file := File{f.Name(), uint64(info.Size())}
+			file := File{folder, f.Name(), uint64(info.Size())}
 			folder.files = append(folder.files, &file)
 			size += uint64(info.Size())
 			fileCount++
 		}
 	}
+
+	stats.mutex.Lock()
+	stats.files = append(stats.files, folder.files...)
+	stats.mutex.Unlock()
 
 	folder.mutex.Lock()
 	folder.folderCount += folderCount
